@@ -3,6 +3,7 @@
 
 import os
 import sys
+import re
 
 try:
     from setuptools import setup
@@ -13,26 +14,40 @@ except ImportError:
 version_info = sys.version_info[:2]
 source_folder = "py" + str(version_info[0]) + str(version_info[1])
 if not os.path.exists(source_folder):
-    raise EnvironmentError("unsupported version of Python, looking for " + repr(source_folder))
+    raise EnvironmentError(
+        "unsupported version of Python, looking for " +
+        repr(source_folder) + " in " +
+        os.getcwd()
+        )
+
+# load in the project metadata
+init_py = open(os.path.join(source_folder, 'bacpypes', '__init__.py')).read()
+metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", init_py))
 
 requirements = [
     # no external requirements
 ]
 
+setup_requirements = [
+    'pytest-runner',
+    ]
+
 test_requirements = [
-    'nose',
+    'pytest',
+    'bacpypes',
 ]
 
 setup(
-    name='bacpypes',
-    version="0.13.4",
-    description="Testing multiple versions of python",
-    long_description="This is a long line of text",
-    author="Joel Bender",
-    author_email="joel@carrickbender.com",
-    url="http://something.com",
+    name="bacpypes",
+    version=metadata['version'],
+    description="BACnet Communications Library",
+    long_description="BACpypes provides a BACnet application layer and network layer written in Python for daemons, scripting, and graphical interfaces.",
+    author=metadata['author'],
+    author_email=metadata['email'],
+    url="https://github.com/JoelBender/bacpypes",
     packages=[
         'bacpypes',
+        'bacpypes.service',
     ],
     package_dir={
         'bacpypes': os.path.join(source_folder, 'bacpypes'),
@@ -52,6 +67,9 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.4',
     ],
-    test_suite='nose.collector',
-    tests_require=test_requirements
+
+    setup_requires=setup_requirements,
+
+    test_suite='tests',
+    tests_require=test_requirements,
 )

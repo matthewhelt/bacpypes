@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 """
 This application presents a 'console' prompt to the user asking for Who-Is and I-Am
@@ -12,14 +12,16 @@ from bacpypes.debugging import bacpypes_debugging, ModuleLogger
 from bacpypes.consolelogging import ConfigArgumentParser
 from bacpypes.consolecmd import ConsoleCmd
 
-from bacpypes.core import run
+from bacpypes.core import run, enable_sleeping
+from bacpypes.iocb import IOCB
 
 from bacpypes.pdu import Address, GlobalBroadcast
-from bacpypes.app import LocalDeviceObject, BIPSimpleApplication
-
 from bacpypes.apdu import WhoIsRequest, IAmRequest
 from bacpypes.basetypes import ServicesSupported
 from bacpypes.errors import DecodingError
+
+from bacpypes.app import BIPForeignApplication
+from bacpypes.service.device import LocalDeviceObject
 
 # some debugging
 _debug = 0
@@ -28,17 +30,17 @@ _log = ModuleLogger(globals())
 # globals
 this_device = None
 this_application = None
-this_console = None
 
 #
 #   WhoIsIAmApplication
 #
 
-class WhoIsIAmApplication(BIPSimpleApplication):
+@bacpypes_debugging
+class WhoIsIAmApplication(BIPForeignApplication):
 
     def __init__(self, *args):
         if _debug: WhoIsIAmApplication._debug("__init__ %r", args)
-        BIPSimpleApplication.__init__(self, *args)
+        BIPForeignApplication.__init__(self, *args)
 
         # keep track of requests to line up responses
         self._request = None
@@ -50,13 +52,13 @@ class WhoIsIAmApplication(BIPSimpleApplication):
         self._request = apdu
 
         # forward it along
-        BIPSimpleApplication.request(self, apdu)
+        BIPForeignApplication.request(self, apdu)
 
     def confirmation(self, apdu):
         if _debug: WhoIsIAmApplication._debug("confirmation %r", apdu)
 
         # forward it along
-        BIPSimpleApplication.confirmation(self, apdu)
+        BIPForeignApplication.confirmation(self, apdu)
 
     def indication(self, apdu):
         if _debug: WhoIsIAmApplication._debug("indication %r", apdu)
@@ -64,13 +66,13 @@ class WhoIsIAmApplication(BIPSimpleApplication):
         if (isinstance(self._request, WhoIsRequest)) and (isinstance(apdu, IAmRequest)):
             device_type, device_instance = apdu.iAmDeviceIdentifier
             if device_type != 'device':
-                raise DecodingError, "invalid object type"
+                raise DecodingError("invalid object type")
 
             if (self._request.deviceInstanceRangeLowLimit is not None) and \
-                (device_instance < self._request.deviceInstanceRangeLowLimit):
+                    (device_instance < self._request.deviceInstanceRangeLowLimit):
                 pass
             elif (self._request.deviceInstanceRangeHighLimit is not None) and \
-                (device_instance > self._request.deviceInstanceRangeHighLimit):
+                    (device_instance > self._request.deviceInstanceRangeHighLimit):
                 pass
             else:
                 # print out the contents
@@ -82,14 +84,14 @@ class WhoIsIAmApplication(BIPSimpleApplication):
                 sys.stdout.flush()
 
         # forward it along
-        BIPSimpleApplication.indication(self, apdu)
+        BIPForeignApplication.indication(self, apdu)
 
-bacpypes_debugging(WhoIsIAmApplication)
 
 #
 #   WhoIsIAmConsoleCmd
 #
 
+@bacpypes_debugging
 class WhoIsIAmConsoleCmd(ConsoleCmd):
 
     def do_whois(self, args):
@@ -111,11 +113,15 @@ class WhoIsIAmConsoleCmd(ConsoleCmd):
                 request.deviceInstanceRangeHighLimit = int(args[1])
             if _debug: WhoIsIAmConsoleCmd._debug("    - request: %r", request)
 
-            # give it to the application
-            this_application.request(request)
+            # make an IOCB
+            iocb = IOCB(request)
+            if _debug: WriteSomethingConsoleCmd._debug("    - iocb: %r", iocb)
 
-        except Exception, e:
-            WhoIsIAmConsoleCmd._exception("exception: %r", e)
+            # give it to the application
+            this_application.request_io(iocb)
+
+        except Exception as err:
+            WhoIsIAmConsoleCmd._exception("exception: %r", err)
 
     def do_iam(self, args):
         """iam"""
@@ -134,11 +140,15 @@ class WhoIsIAmConsoleCmd(ConsoleCmd):
             request.vendorID = this_device.vendorIdentifier
             if _debug: WhoIsIAmConsoleCmd._debug("    - request: %r", request)
 
-            # give it to the application
-            this_application.request(request)
+            # make an IOCB
+            iocb = IOCB(request)
+            if _debug: WriteSomethingConsoleCmd._debug("    - iocb: %r", iocb)
 
-        except Exception, e:
-            WhoIsIAmConsoleCmd._exception("exception: %r", e)
+            # give it to the application
+            this_application.request_io(iocb)
+
+        except Exception as err:
+            WhoIsIAmConsoleCmd._exception("exception: %r", err)
 
     def do_rtn(self, args):
         """rtn <addr> <net> ... """
@@ -156,13 +166,14 @@ class WhoIsIAmConsoleCmd(ConsoleCmd):
         # pass along to the service access point
         this_application.nsap.add_router_references(adapter, router_address, network_list)
 
-bacpypes_debugging(WhoIsIAmConsoleCmd)
 
 #
-#   __main__
+#   main
 #
 
-try:
+def main():
+    global this_device, this_application
+
     # parse the command line arguments
     args = ConfigArgumentParser(description=__doc__).parse_args()
 
@@ -177,6 +188,7 @@ try:
         segmentationSupported=args.ini.segmentationsupported,
         vendorIdentifier=int(args.ini.vendoridentifier),
         )
+    if _debug: _log.debug("    - this_device: %r", this_device)
 
     # build a bit string that knows about the bit names
     pss = ServicesSupported()
@@ -189,7 +201,12 @@ try:
     this_device.protocolServicesSupported = pss.value
 
     # make a simple application
-    this_application = WhoIsIAmApplication(this_device, args.ini.address)
+    this_application = WhoIsIAmApplication(
+        this_device, args.ini.address,
+        Address(args.ini.foreignbbmd),
+        int(args.ini.foreignttl),
+        )
+    if _debug: _log.debug("    - this_application: %r", this_application)
 
     # get the services supported
     services_supported = this_application.get_services_supported()
@@ -200,13 +217,17 @@ try:
 
     # make a console
     this_console = WhoIsIAmConsoleCmd()
+    if _debug: _log.debug("    - this_console: %r", this_console)
+
+    # enable sleeping will help with threads
+    enable_sleeping()
 
     _log.debug("running")
 
     run()
 
-except Exception, e:
-    _log.exception("an error has occurred: %s", e)
-finally:
-    _log.debug("finally")
+    _log.debug("fini")
 
+
+if __name__ == "__main__":
+    main()

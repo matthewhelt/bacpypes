@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 """
 This sample application is a simple BACpypes application that
@@ -12,23 +12,20 @@ from bacpypes.debugging import bacpypes_debugging, ModuleLogger
 from bacpypes.consolelogging import ConfigArgumentParser
 from bacpypes.consolecmd import ConsoleCmd
 
-from bacpypes.core import run
+from bacpypes.core import run, enable_sleeping
 
-from bacpypes.app import LocalDeviceObject, BIPSimpleApplication
+from bacpypes.app import BIPSimpleApplication
+from bacpypes.service.device import LocalDeviceObject
 
 # some debugging
 _debug = 0
 _log = ModuleLogger(globals())
 
-# globals
-this_device = None
-this_application = None
-this_console = None
-
 #
 #   SampleApplication
 #
 
+@bacpypes_debugging
 class SampleApplication(BIPSimpleApplication):
 
     def __init__(self, device, address):
@@ -51,26 +48,24 @@ class SampleApplication(BIPSimpleApplication):
         if _debug: SampleApplication._debug("confirmation %r", apdu)
         BIPSimpleApplication.confirmation(self, apdu)
 
-bacpypes_debugging(SampleApplication)
 
 #
 #   SampleConsoleCmd
 #
 
+@bacpypes_debugging
 class SampleConsoleCmd(ConsoleCmd):
 
     def do_nothing(self, args):
         """nothing can be done"""
         args = args.split()
         if _debug: SampleConsoleCmd._debug("do_nothing %r", args)
-
-bacpypes_debugging(SampleConsoleCmd)
-
+            
 #
 #   __main__
 #
 
-try:
+def main():
     # parse the command line arguments
     args = ConfigArgumentParser(description=__doc__).parse_args()
 
@@ -98,13 +93,16 @@ try:
 
     # make a console
     this_console = SampleConsoleCmd()
+    if _debug: _log.debug("    - this_console: %r", this_console)
+
+    # enable sleeping will help with threads
+    enable_sleeping()
 
     _log.debug("running")
 
     run()
 
-except Exception, e:
-    _log.exception("an error has occurred: %s", e)
-finally:
-    _log.debug("finally")
+    _log.debug("fini")
 
+if __name__ == "__main__":
+    main()

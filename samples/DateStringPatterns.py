@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 from bacpypes.primitivedata import Date
 
@@ -22,7 +22,7 @@ def permutation(**kwargs):
         except Exception as why:
             test_value = str(why)
         print(test_string + '\t' + str(test_value))
-    print()
+    print("")
 
 for year in year_group:
     for month in month_group:
